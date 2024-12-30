@@ -398,6 +398,15 @@ class FlushCacheReq:
 
 
 @dataclass
+class MemoryDeallocReqInput:
+    pass
+
+@dataclass
+class MemoryDeallocReqOutput:
+    success: bool
+    message: str
+
+@dataclass
 class UpdateWeightFromDiskReqInput:
     # The model path with the new weights
     model_path: str

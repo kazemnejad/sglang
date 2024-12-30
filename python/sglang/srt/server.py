@@ -57,7 +57,7 @@ from sglang.srt.managers.io_struct import (
     OpenSessionReqInput,
     UpdateWeightFromDiskReqInput,
     UpdateWeightsFromDistributedReqInput,
-    UpdateWeightsFromTensorReqInput,
+    UpdateWeightsFromTensorReqInput, MemoryDeallocReqInput,
 )
 from sglang.srt.managers.scheduler import run_scheduler_process
 from sglang.srt.managers.tokenizer_manager import TokenizerManager
@@ -171,6 +171,22 @@ async def flush_cache():
         "(When there are running or waiting requests, the operation will not be performed.)\n",
         status_code=200,
     )
+
+@app.post("/deallocate_memory")
+async def deallocate_memory(obj: MemoryDeallocReqInput, request: Request):
+    """Deallocate GPU memory including both memory pool and model weights.  """
+    success, message = await tokenizer_manager.deallocate_memory(obj, request)
+    content = {"success": success, "message": message}
+    if success:
+        return ORJSONResponse(
+            content,
+            status_code=HTTPStatus.OK,
+        )
+    else:
+        return ORJSONResponse(
+            content,
+            status_code=HTTPStatus.BAD_REQUEST,
+        )
 
 
 @app.get("/start_profile")

@@ -28,7 +28,7 @@ from sglang.srt.managers.io_struct import (
     InitWeightsUpdateGroupReqInput,
     UpdateWeightFromDiskReqInput,
     UpdateWeightsFromDistributedReqInput,
-    UpdateWeightsFromTensorReqInput,
+    UpdateWeightsFromTensorReqInput, MemoryDeallocReqInput,
 )
 from sglang.srt.managers.schedule_batch import ModelWorkerBatch
 from sglang.srt.managers.tp_worker import TpModelWorker
@@ -231,6 +231,9 @@ class TpModelWorkerClient:
 
     def get_weights_by_name(self, recv_req: GetWeightsByNameReqInput):
         return self.worker.get_weights_by_name(recv_req)
+
+    def deallocate_memory(self, recv_req: MemoryDeallocReqInput):
+        return self.worker.deallocate_memory(recv_req)
 
     def __delete__(self):
         self.input_queue.put((None, None))

@@ -24,7 +24,7 @@ from sglang.srt.managers.io_struct import (
     InitWeightsUpdateGroupReqInput,
     UpdateWeightFromDiskReqInput,
     UpdateWeightsFromDistributedReqInput,
-    UpdateWeightsFromTensorReqInput,
+    UpdateWeightsFromTensorReqInput, MemoryDeallocReqInput,
 )
 from sglang.srt.managers.schedule_batch import ModelWorkerBatch, global_server_args_dict
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
@@ -200,3 +200,7 @@ class TpModelWorker:
             recv_req.name, recv_req.truncate_size
         )
         return parameter
+
+    def deallocate_memory(self, recv_req: MemoryDeallocReqInput):
+        success, message = self.model_runner.deallocate_memory()
+        return success, message

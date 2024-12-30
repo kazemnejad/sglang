@@ -53,7 +53,7 @@ from sglang.srt.managers.io_struct import (
     UpdateWeightsFromDistributedReqInput,
     UpdateWeightsFromDistributedReqOutput,
     UpdateWeightsFromTensorReqInput,
-    UpdateWeightsFromTensorReqOutput,
+    UpdateWeightsFromTensorReqOutput, MemoryDeallocReqInput, MemoryDeallocReqOutput,
 )
 from sglang.srt.managers.schedule_batch import (
     FINISH_ABORT,
@@ -492,6 +492,11 @@ class Scheduler:
             elif isinstance(recv_req, GetWeightsByNameReqInput):
                 parameter = self.get_weights_by_name(recv_req)
                 self.send_to_tokenizer.send_pyobj(GetWeightsByNameReqOutput(parameter))
+            elif isinstance(recv_req, MemoryDeallocReqInput):
+                success, message = self.deallocate_memory(recv_req)
+                self.send_to_tokenizer.send_pyobj(
+                    MemoryDeallocReqOutput(success, message)
+                )
             elif isinstance(recv_req, ProfileReq):
                 if recv_req == ProfileReq.START_PROFILE:
                     self.start_profile()
@@ -1496,6 +1501,14 @@ class Scheduler:
     def get_weights_by_name(self, recv_req: GetWeightsByNameReqInput):
         parameter = self.tp_worker.get_weights_by_name(recv_req)
         return parameter
+
+    def deallocate_memory(self, recv_req: MemoryDeallocReqInput):
+        """Update the online model parameter from tensors."""
+        flash_cache_success = self.flush_cache()
+        assert flash_cache_success, "Cache flush failed after deallocating"
+
+        success, message = self.tp_worker.deallocate_memory(recv_req)
+        return success, message
 
     def start_profile(self) -> None:
         if self.profiler is None:

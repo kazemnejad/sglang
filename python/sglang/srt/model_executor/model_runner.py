@@ -449,6 +449,43 @@ class ModelRunner:
             logger.error(f"Error when getting parameter {name}: {e}")
             return None
 
+    def deallocate_memory(self):
+        self.req_to_token_pool.convert_buffers_to_meta_tensors()
+        self.token_to_kv_pool.convert_buffers_to_meta_tensors()
+
+        for name, param in self.model.named_parameters():
+            param.data = param.data.cpu()
+
+        import gc
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        logger.info(
+            f"Memory pool end deallocation. "
+            f"avail mem={get_available_gpu_memory(self.device, self.gpu_id):.2f} GB"
+        )
+
+    def ensure_allocated_memory(self):
+        has_reallocated = False
+        if self.req_to_token_pool.is_buffer_meta_tensor():
+            self.req_to_token_pool.convert_meta_tensors_to_buffers()
+            has_reallocated = True
+
+        if self.token_to_kv_pool.is_buffer_meta_tensor():
+            self.token_to_kv_pool.convert_meta_tensors_to_buffers()
+            has_reallocated = True
+
+        param_device = next(self.model.parameters()).device
+        if param_device != self.device:
+            for name, param in self.model.named_parameters():
+                param.data = param.data.to(self.device)
+            has_reallocated = True
+        if has_reallocated:
+            logger.info(
+                f"Memory pool end allocation. "
+                f"avail mem={get_available_gpu_memory(self.device, self.gpu_id):.2f} GB"
+            )
+
     def init_lora_manager(self):
         self.lora_manager = LoRAManager(
             base_model=self.model,

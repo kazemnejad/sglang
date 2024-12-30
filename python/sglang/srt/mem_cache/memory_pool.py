@@ -93,6 +93,15 @@ class ReqToTokenPool:
         for indices, values in write_records:
             self.req_to_token[indices] = values
 
+    def convert_buffers_to_meta_tensors(self):
+        self.req_to_token = torch.empty_like(self.req_to_token, device="meta")
+
+    def convert_meta_tensors_to_buffers(self):
+        self.req_to_token = torch.zeros_like(self.req_to_token, device=self.device)
+
+    def is_buffer_meta_tensor(self):
+        return self.req_to_token.device == torch.device("meta")
+
 
 class BaseTokenToKVPool:
     """A memory pool that maps a token location to its kv cache data."""
@@ -171,6 +180,15 @@ class BaseTokenToKVPool:
     ) -> None:
         raise NotImplementedError()
 
+    def convert_buffers_to_meta_tensors(self):
+        raise NotImplementedError()
+
+    def convert_meta_tensors_to_buffers(self):
+        raise NotImplementedError()
+
+    def is_buffer_meta_tensor(self):
+        raise NotImplementedError()
+
 
 class MHATokenToKVPool(BaseTokenToKVPool):
 
@@ -244,6 +262,17 @@ class MHATokenToKVPool(BaseTokenToKVPool):
             self.k_buffer[layer_id][loc] = cache_k
             self.v_buffer[layer_id][loc] = cache_v
 
+    def convert_buffers_to_meta_tensors(self):
+        for layer_id in range(len(self.k_buffer)):
+            self.k_buffer[layer_id] = torch.empty_like(self.k_buffer[layer_id], device="meta")
+            self.v_buffer[layer_id] = torch.empty_like(self.v_buffer[layer_id], device="meta")
+
+    def convert_meta_tensors_to_buffers(self):
+        self._create_buffers()
+
+    def is_buffer_meta_tensor(self):
+        return self.k_buffer[0].device == torch.device("meta")
+
 
 # This compiled version is slower in the unit test
 # python3 -m unittest test_bench_serving.TestBenchServing.test_offline_throughput_non_stream_small_batch_size
@@ -303,6 +332,17 @@ class MLATokenToKVPool(BaseTokenToKVPool):
             self.kv_buffer[layer_id][loc] = cache_k.view(self.store_dtype)
         else:
             self.kv_buffer[layer_id][loc] = cache_k
+
+    def convert_buffers_to_meta_tensors(self):
+        for layer_id in range(len(self.kv_buffer)):
+            self.kv_buffer[layer_id] = torch.empty_like(self.kv_buffer[layer_id], device="meta")
+
+    def convert_meta_tensors_to_buffers(self):
+        for layer_id in range(len(self.kv_buffer)):
+            self.kv_buffer[layer_id] = torch.empty_like(self.kv_buffer[layer_id], device=self.device)
+
+    def is_buffer_meta_tensor(self):
+        return self.kv_buffer[0].device == torch.device("meta")
 
 
 class DoubleSparseTokenToKVPool(BaseTokenToKVPool):

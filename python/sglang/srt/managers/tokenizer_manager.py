@@ -61,7 +61,7 @@ from sglang.srt.managers.io_struct import (
     UpdateWeightsFromDistributedReqInput,
     UpdateWeightsFromDistributedReqOutput,
     UpdateWeightsFromTensorReqInput,
-    UpdateWeightsFromTensorReqOutput,
+    UpdateWeightsFromTensorReqOutput, MemoryDeallocReqInput, MemoryDeallocReqOutput,
 )
 from sglang.srt.metrics.collector import TokenizerMetricsCollector
 from sglang.srt.sampling.sampling_params import SamplingParams
@@ -186,6 +186,9 @@ class TokenizerManager:
             self.send_to_scheduler, server_args.dp_size
         )
         self.get_weights_by_name_communicator = _Communicator(
+            self.send_to_scheduler, server_args.dp_size
+        )
+        self.deallocate_memory_communicator = _Communicator(
             self.send_to_scheduler, server_args.dp_size
         )
 
@@ -548,6 +551,19 @@ class TokenizerManager:
         else:
             return all_parameters
 
+    async def deallocate_memory(
+        self,
+        obj: MemoryDeallocReqInput,
+        request: Optional[fastapi.Request] = None,
+    ) -> Tuple[bool, str]:
+        self.auto_create_handle_loop()
+
+        # Acquire the lock so that we don't deallocate
+        # memory while requests are in progress.
+        async with self.model_update_lock.writer_lock:
+            result = (await self.deallocate_memory_communicator(obj))[0]
+            return result.success, result.message
+
     async def open_session(
         self, obj: OpenSessionReqInput, request: Optional[fastapi.Request] = None
     ):
@@ -748,6 +764,8 @@ class TokenizerManager:
                 self.update_weights_from_tensor_communicator.handle_recv(recv_obj)
             elif isinstance(recv_obj, GetWeightsByNameReqOutput):
                 self.get_weights_by_name_communicator.handle_recv(recv_obj)
+            elif isinstance(recv_obj, MemoryDeallocReqOutput):
+                self.deallocate_memory_communicator.handle_recv(recv_obj)
             else:
                 raise ValueError(f"Invalid object: {recv_obj=}")
 
