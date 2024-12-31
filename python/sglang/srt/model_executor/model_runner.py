@@ -387,6 +387,7 @@ class ModelRunner:
                 rank=rank,
                 group_name=group_name,
             )
+            logger.info(f"Succeeded to initialize custom process group. gpu_id={self.gpu_id} and rank={rank}")
             dist.barrier(group=self._model_update_group, device_ids=[self.gpu_id])
             return True, "Succeeded to initialize custom process group."
         except Exception as e:
@@ -404,10 +405,14 @@ class ModelRunner:
             dtype: the data type of the parameter to be updated.
             shape: the shape of the parameter to be updated.
         """
+        self.ensure_memory_allocated()
+
         target_dtype = (
             dtype if isinstance(dtype, torch.dtype) else getattr(torch, dtype)
         )
         current_dtype = self.dtype if isinstance(self.dtype, str) else self.dtype
+
+        logger.info(f"update {name}, dtype={target_dtype}, shape={shape}, device={self.device}, gpu_id={self.gpu_id}")
 
         assert (
             self._model_update_group is not None
@@ -416,6 +421,7 @@ class ModelRunner:
         try:
             weights = torch.empty(shape, dtype=target_dtype, device=self.device)
             torch.distributed.broadcast(weights, src=0, group=self._model_update_group)
+            logger.info("Done broadcasting weights.")
             self.model.load_weights([(name, weights)])
             return True, f"Succeeded to update parameter {name} online."
 
@@ -460,23 +466,29 @@ class ModelRunner:
         gc.collect()
         torch.cuda.empty_cache()
 
+        available_gpu_memory = get_available_gpu_memory(self.device, self.gpu_id)
         logger.info(
             f"Memory pool end deallocation. "
-            f"avail mem={get_available_gpu_memory(self.device, self.gpu_id):.2f} GB"
+            f"avail mem={available_gpu_memory:.2f} GB"
         )
 
-    def ensure_allocated_memory(self):
+        return True, f"Succeeded to deallocate memory. avail mem={available_gpu_memory:.2f} GB"
+
+    def ensure_memory_allocated(self):
         has_reallocated = False
         if self.req_to_token_pool.is_buffer_meta_tensor():
+            logger.info("Reallocate `req_to_token` memory.")
             self.req_to_token_pool.convert_meta_tensors_to_buffers()
             has_reallocated = True
 
         if self.token_to_kv_pool.is_buffer_meta_tensor():
+            logger.info("Reallocate `token_to_kv` memory.")
             self.token_to_kv_pool.convert_meta_tensors_to_buffers()
             has_reallocated = True
 
         param_device = next(self.model.parameters()).device
-        if param_device != self.device:
+        if param_device == torch.device("cpu"):
+            logger.info(f"Reallocate model parameters to the target device. f{self.device} , {param_device}")
             for name, param in self.model.named_parameters():
                 param.data = param.data.to(self.device)
             has_reallocated = True
