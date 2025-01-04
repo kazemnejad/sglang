@@ -254,7 +254,9 @@ class TokenizerManager:
             input_embeds = obj.input_embeds
             input_ids = obj.input_ids
         elif obj.input_ids is None:
-            input_ids = self.tokenizer.encode(input_text)
+            input_ids = self.tokenizer.encode(
+                input_text, add_special_tokens=obj.add_special_tokens_in_tokenization
+            )
         else:
             input_ids = obj.input_ids
 

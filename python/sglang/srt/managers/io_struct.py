@@ -65,6 +65,8 @@ class GenerateReqInput:
     modalities: Optional[List[str]] = None
     # LoRA related
     lora_path: Optional[Union[List[Optional[str]], Optional[str]]] = None
+    # Add special tokens during tokenization
+    add_special_tokens_in_tokenization: bool = True
 
     # Session info for continual prompting
     session_params: Optional[Union[List[Dict], Dict]] = None
@@ -200,6 +202,7 @@ class GenerateReqInput:
             stream=self.stream,
             modalities=self.modalities[i] if self.modalities else None,
             lora_path=self.lora_path[i] if self.lora_path is not None else None,
+            add_special_tokens_in_tokenization=self.add_special_tokens_in_tokenization
         )
 
 
