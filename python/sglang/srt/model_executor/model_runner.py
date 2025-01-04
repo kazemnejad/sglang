@@ -456,6 +456,12 @@ class ModelRunner:
             return None
 
     def deallocate_memory(self):
+        available_gpu_memory = get_available_gpu_memory(self.device, self.gpu_id)
+        logger.info(
+            f"Memory pool end deallocation. befoooooree! "
+            f"avail mem={available_gpu_memory:.2f} GB"
+        )
+
         self.req_to_token_pool.convert_buffers_to_meta_tensors()
         self.token_to_kv_pool.convert_buffers_to_meta_tensors()
 
@@ -472,9 +478,38 @@ class ModelRunner:
             f"avail mem={available_gpu_memory:.2f} GB"
         )
 
+        self.is_deallocated = True
+
         return True, f"Succeeded to deallocate memory. avail mem={available_gpu_memory:.2f} GB"
 
     def ensure_memory_allocated(self):
+        has_reallocated = False
+        if self.req_to_token_pool.is_buffer_meta_tensor():
+            logger.info("Reallocate `req_to_token` memory.")
+            self.req_to_token_pool.convert_meta_tensors_to_buffers()
+            has_reallocated = True
+
+        if self.token_to_kv_pool.is_buffer_meta_tensor():
+            logger.info("Reallocate `token_to_kv` memory.")
+            self.token_to_kv_pool.convert_meta_tensors_to_buffers()
+            has_reallocated = True
+
+        if has_reallocated:
+            self.init_attention_backend()
+
+        param_device = next(self.model.parameters()).device
+        if param_device == torch.device("cpu"):
+            logger.info(f"Reallocate model parameters to the target device. f{self.device} , {param_device}")
+            for name, param in self.model.named_parameters():
+                param.data = param.data.to(self.device)
+            has_reallocated = True
+        if has_reallocated:
+            logger.info(
+                f"Memory pool end allocation. "
+                f"avail mem={get_available_gpu_memory(self.device, self.gpu_id):.2f} GB"
+            )
+
+    def ensure_memory_allocated_old(self):
         has_reallocated = False
         if self.req_to_token_pool.is_buffer_meta_tensor():
             logger.info("Reallocate `req_to_token` memory.")
