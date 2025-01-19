@@ -276,7 +276,9 @@ class TokenizerManager:
                     "accept text prompts. Please provide input_ids or re-initialize "
                     "the engine with skip_tokenizer_init=False."
                 )
-            input_ids = self.tokenizer.encode(input_text)
+            input_ids = self.tokenizer.encode(
+                input_text, add_special_tokens=obj.add_special_tokens_in_tokenization
+            )
 
         if self.is_generation:
             # TODO: also support getting embeddings for multimodal models
@@ -595,7 +597,8 @@ class TokenizerManager:
         request: Optional[fastapi.Request] = None,
     ):
         self.auto_create_handle_loop()
-        await self.release_memory_occupation_communicator(obj)
+        async with self.model_update_lock.writer_lock:
+            await self.release_memory_occupation_communicator(obj)
 
     async def resume_memory_occupation(
         self,
