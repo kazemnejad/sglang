@@ -843,15 +843,17 @@ class TokenizerManager:
         token_logprobs_idx: List[int],
         decode_to_text: bool,
     ):
+        def clamp_neg_inf(val):
+            return -999999999.0 if val == float("-inf") else val
         if not decode_to_text:
             return [
-                (logprob, token_id, None)
+                (clamp_neg_inf(logprob), token_id, None)
                 for logprob, token_id in zip(token_logprobs_val, token_logprobs_idx)
             ]
         else:
             assert self.tokenizer is not None
             token_texts = self.tokenizer.batch_decode(token_logprobs_idx)
-            return list(zip(token_logprobs_val, token_logprobs_idx, token_texts))
+            return list(zip(map(clamp_neg_inf, token_logprobs_val), token_logprobs_idx, token_texts))
 
     def detokenize_top_logprobs_tokens(
         self,
