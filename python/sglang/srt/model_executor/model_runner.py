@@ -472,7 +472,10 @@ class ModelRunner:
                 rank=rank,
                 group_name=group_name,
             )
-            dist.barrier(group=self._model_update_group, device_ids=[rank])
+            logger.info(
+                f"Succeeded to initialize custom process group. gpu_id={self.gpu_id} and rank={rank}"
+            )
+            dist.barrier(group=self._model_update_group, device_ids=[self.gpu_id])
             return True, "Succeeded to initialize custom process group."
         except Exception as e:
             message = f"Failed to initialize custom process group: {e}."
@@ -500,6 +503,7 @@ class ModelRunner:
         try:
             weights = torch.empty(shape, dtype=target_dtype, device=self.device)
             torch.distributed.broadcast(weights, src=0, group=self._model_update_group)
+            logger.info(f"Done broadcasting weights for parameter {name}.")
             self.model.load_weights([(name, weights)])
             return True, f"Succeeded to update parameter {name} online."
 
