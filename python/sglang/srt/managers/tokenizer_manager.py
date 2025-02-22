@@ -511,9 +511,23 @@ class TokenizerManager:
 
         # Wait for all requests
         is_stream = hasattr(obj, "stream") and obj.stream
-        if not is_stream:
+        is_stream_once_complete = hasattr(obj, "stream_once_complete") and obj.stream_once_complete
+        if not is_stream and not is_stream_once_complete:
             outputs = await asyncio.gather(*(gen.__anext__() for gen in generators))
             yield outputs
+        elif is_stream_once_complete:
+            rid_to_index = {rid: i for i, rid in enumerate(rids)}
+            task_map = {asyncio.create_task(gen.__anext__()): gen for gen in generators}
+            while task_map:
+                done, _ = await asyncio.wait(
+                    task_map.keys(), return_when=asyncio.FIRST_COMPLETED
+                )
+
+                for task in done:
+                    gen = task_map.pop(task)
+                    result = task.result()
+                    result["index"] = rid_to_index[result["meta_info"]["id"]]
+                    yield result
         else:
             rid_to_index = {rid: i for i, rid in enumerate(rids)}
             task_map = {asyncio.create_task(gen.__anext__()): gen for gen in generators}

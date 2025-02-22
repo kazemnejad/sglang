@@ -166,7 +166,7 @@ async def get_server_info():
 @app.api_route("/generate", methods=["POST", "PUT"])
 async def generate_request(obj: GenerateReqInput, request: Request):
     """Handle a generate request."""
-    if obj.stream:
+    if obj.stream or obj.stream_once_complete:
 
         async def stream_results() -> AsyncIterator[bytes]:
             try:
@@ -528,6 +528,7 @@ def launch_server(
             log_level=server_args.log_level_http or server_args.log_level,
             timeout_keep_alive=5,
             loop="uvloop",
+            # limit_concurrency=10000,
         )
     finally:
         t.join()
