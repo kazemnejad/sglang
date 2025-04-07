@@ -526,9 +526,9 @@ def launch_server(
             host=server_args.host,
             port=server_args.port,
             log_level=server_args.log_level_http or server_args.log_level,
-            timeout_keep_alive=5,
+            timeout_keep_alive=100000,
             loop="uvloop",
-            # limit_concurrency=10000,
+            limit_concurrency=10000,
         )
     finally:
         t.join()
