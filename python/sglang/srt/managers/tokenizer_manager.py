@@ -594,9 +594,21 @@ class TokenizerManager:
 
         # Wait for all requests
         is_stream = hasattr(obj, "stream") and obj.stream
-        if not is_stream:
+        is_stream_once_complete = (
+            hasattr(obj, "stream_once_complete") and obj.stream_once_complete
+        )
+        if not is_stream and not is_stream_once_complete:
             outputs = await asyncio.gather(*(gen.__anext__() for gen in generators))
             yield outputs
+        elif is_stream_once_complete:
+            rid_to_index = {rid: i for i, rid in enumerate(rids)}
+            tasks = [asyncio.create_task(gen.__anext__()) for gen in generators]
+
+            # Process all tasks as they complete
+            for completed_task in asyncio.as_completed(tasks):
+                result = await completed_task
+                result["index"] = rid_to_index[result["meta_info"]["id"]]
+                yield result
         else:
             rid_to_index = {rid: i for i, rid in enumerate(rids)}
             task_map = {asyncio.create_task(gen.__anext__()): gen for gen in generators}
@@ -1048,7 +1060,7 @@ class TokenizerManager:
     ):
         def clamp_neg_inf(val):
             return -999999999.0 if val == float("-inf") else val
-        
+
         if not decode_to_text:
             return [
                 (clamp_neg_inf(logprob), token_id, None)
@@ -1057,7 +1069,13 @@ class TokenizerManager:
         else:
             assert self.tokenizer is not None
             token_texts = self.tokenizer.batch_decode(token_logprobs_idx)
-            return list(zip(list(map(clamp_neg_inf, token_logprobs_val)), token_logprobs_idx, token_texts))
+            return list(
+                zip(
+                    list(map(clamp_neg_inf, token_logprobs_val)),
+                    token_logprobs_idx,
+                    token_texts,
+                )
+            )
 
     def detokenize_top_logprobs_tokens(
         self,
