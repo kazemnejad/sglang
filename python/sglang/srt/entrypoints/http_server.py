@@ -226,7 +226,7 @@ async def set_internal_state(obj: SetInternalStateReq, request: Request):
 @app.api_route("/generate", methods=["POST", "PUT"])
 async def generate_request(obj: GenerateReqInput, request: Request):
     """Handle a generate request."""
-    if obj.stream:
+    if obj.stream or obj.stream_once_complete:
 
         async def stream_results() -> AsyncIterator[bytes]:
             try:
@@ -716,7 +716,7 @@ def launch_server(
             host=server_args.host,
             port=server_args.port,
             log_level=server_args.log_level_http or server_args.log_level,
-            timeout_keep_alive=5,
+            timeout_keep_alive=10000,
             loop="uvloop",
         )
     finally:
