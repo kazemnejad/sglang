@@ -317,6 +317,8 @@ class EmbeddingReqInput:
     input_ids: Optional[Union[List[List[int]], List[int]]] = None
     # The request id.
     rid: Optional[Union[List[str], str]] = None
+    # Whether to add special tokens during tokenization
+    add_special_tokens_in_tokenization: bool = True
     # Dummy sampling params for compatibility
     sampling_params: Union[List[Dict], Dict] = None
     # Dummy input embeds for compatibility
@@ -387,6 +389,7 @@ class EmbeddingReqInput:
             image_data=self.image_data[i] if self.image_data is not None else None,
             sampling_params=self.sampling_params[i],
             rid=self.rid[i],
+            add_special_tokens_in_tokenization=self.add_special_tokens_in_tokenization,
         )
 
 
