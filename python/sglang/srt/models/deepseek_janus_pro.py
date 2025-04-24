@@ -45,8 +45,9 @@ from transformers import AutoModel, PreTrainedModel
 
 from sglang.srt.configs.janus_pro import *
 from sglang.srt.layers.attention.vision import VisionAttention
-from sglang.srt.layers.logits_processor import LogitsProcessor
+from sglang.srt.layers.logits_processor import LogitsMetadata, LogitsProcessor
 from sglang.srt.layers.quantization import QuantizationConfig
+from sglang.srt.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from sglang.srt.managers.mm_utils import (
     MultiModalityDataPaddingPatternTokenPairs,
     general_mm_embed_routine,
@@ -1910,6 +1911,83 @@ class VQModel(nn.Module):
         return dec, diff
 
 
+class UnifiedEmbedding(nn.Module):
+    """
+    input-ids  <  cut-off  → language tokens
+    input-ids >= cut-off   → image-generation tokens
+    """
+
+    def __init__(
+        self, text_embed: nn.Embedding, img_embed: nn.Embedding, gen_aligner: nn.Module
+    ):
+        super().__init__()
+        self.text_embed = text_embed  # old   language table
+        self.img_embed = img_embed  # old   gen_embed table
+        self.cutoff = text_embed.num_embeddings
+        self.gen_aligner = gen_aligner
+
+    def forward(self, ids: torch.LongTensor):  # [B, T]
+        # --- text branch (always computed) ----------------------------------
+        text_out = self.text_embed(ids.clamp(max=self.cutoff - 1))  # [B,T,D]
+
+        # --- image branch (always computed) ---------------------------------
+        img_ids = (ids - self.cutoff).clamp_(
+            min=0, max=self.img_embed.num_embeddings - 1
+        )
+        img_out = self.gen_aligner(self.img_embed(img_ids))  # [B,T,D]
+
+        # --- combine with a boolean mask, no data‑dependent control flow ----
+        mask = (ids >= self.cutoff).unsqueeze(-1)  # [B,T,1]
+        out = torch.where(mask, img_out, text_out)  # [B,T,D]
+        return out
+
+    # expose a single “virtual” vocab size for convenience
+    @property
+    def num_embeddings(self):
+        return self.cutoff + self.img_embed.num_embeddings
+
+
+class UnifiedLogitsProcessor(LogitsProcessor):
+    def __init__(
+        self,
+        config,
+        gen_head,
+        skip_all_gather: bool = False,
+        logit_scale: Optional[float] = None,
+    ):
+        super().__init__(config, skip_all_gather, logit_scale)
+        self.gen_head = gen_head
+
+    def _get_logits(
+        self,
+        hidden_states: torch.Tensor,
+        lm_head: VocabParallelEmbedding,
+        logits_metadata: LogitsMetadata,
+        embedding_bias: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        logits = super()._get_logits(
+            hidden_states, lm_head, logits_metadata, embedding_bias
+        )
+        gen_logits = self.gen_head(hidden_states).float()
+
+        # Concatenate logits and gen_logits
+        logits = torch.cat([logits, gen_logits], dim=-1)
+
+        return logits
+
+
+class LlamaForCausalLMWithUnifiedEmbedding(LlamaForCausalLM):
+    def __init__(self, config, gen_embed, gen_aligner, gen_head, **kwargs):
+        super().__init__(config, **kwargs)
+        self.unified_embedding = UnifiedEmbedding(
+            self.model.embed_tokens, gen_embed, gen_aligner
+        )
+        self.logits_processor = UnifiedLogitsProcessor(config, gen_head)
+
+    def get_input_embeddings(self) -> nn.Embedding:
+        return self.unified_embedding
+
+
 class MultiModalityPreTrainedModel(PreTrainedModel):
     config_class = MultiModalityConfig
     base_model_prefix = "multi_modality"
@@ -1954,8 +2032,12 @@ class MultiModalityCausalLM(MultiModalityPreTrainedModel):
         )
 
         language_config = config.language_config
-        self.language_model = LlamaForCausalLM(
-            language_config, quant_config=quant_config
+        self.language_model = LlamaForCausalLMWithUnifiedEmbedding(
+            language_config,
+            self.gen_embed,
+            self.gen_aligner,
+            self.gen_head,
+            quant_config=quant_config,
         )
         self.logits_processor = LogitsProcessor(config)
 
@@ -2019,8 +2101,13 @@ class MultiModalityCausalLM(MultiModalityPreTrainedModel):
         ]
 
         params_dict = dict(self.named_parameters())
+        # logger.error(f"params_dict: {list(params_dict.keys())}")
         for name, loaded_weight in weights:
-            if "rotary_emb.inv_freq~" in name or "projector" in name:
+            # logger.error(f"loading weight: {name}")
+            if "rotary_emb.inv_freq~" in name or (
+                "projector" in name
+                and not name.startswith("gen_head.output_mlp_projector.")
+            ):
                 continue
             if "rotary_emb.cos_cached" in name or "rotary_emb.sin_cached" in name:
                 # Models trained using ColossalAI may include these tensors in
@@ -2030,8 +2117,8 @@ class MultiModalityCausalLM(MultiModalityPreTrainedModel):
                 continue
 
             # skip generation sub model
-            if "gen" in name:
-                continue
+            # if "gen" in name:
+            #     logger.error(f"generation sub model: {name}")
 
             # adapt to VisionAttention
             name = name.replace(r"self_attn.out_proj", r"self_attn.proj")
