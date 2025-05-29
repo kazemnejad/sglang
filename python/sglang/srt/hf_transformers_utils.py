@@ -77,7 +77,7 @@ def get_config(
     )
 
     # FIXME: Pour contents of janus-pro's langauge_config to first-level
-    if isinstance(model, str) and model.lower().startswith("deepseek-ai/janus-pro"):
+    if isinstance(model, str) and "janus-pro" in model.lower():
         assert hasattr(config, "language_config")
         for key, val in config.language_config.__dict__.items():
             setattr(config, key, val)
