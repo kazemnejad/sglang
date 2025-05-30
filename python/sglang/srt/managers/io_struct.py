@@ -82,6 +82,8 @@ class GenerateReqInput:
     return_text_in_logprobs: bool = False
     # Whether to stream output.
     stream: bool = False
+    # Whether to stream output once complete (useful for batch requests)
+    stream_once_complete: bool = False
     # Whether to log metrics for this request (e.g. health_generate calls do not log metrics)
     log_metrics: bool = True
 
@@ -89,6 +91,8 @@ class GenerateReqInput:
     modalities: Optional[List[str]] = None
     # LoRA related
     lora_path: Optional[Union[List[Optional[str]], Optional[str]]] = None
+    # Add special tokens during tokenization
+    add_special_tokens_in_tokenization: bool = True
 
     # Session info for continual prompting
     session_params: Optional[Union[List[Dict], Dict]] = None
@@ -398,9 +402,11 @@ class GenerateReqInput:
             token_ids_logprob=self.token_ids_logprob[i],
             return_text_in_logprobs=self.return_text_in_logprobs,
             stream=self.stream,
+            stream_once_complete=self.stream_once_complete,
             log_metrics=self.log_metrics,
             modalities=self.modalities[i] if self.modalities else None,
             lora_path=self.lora_path[i] if self.lora_path is not None else None,
+            add_special_tokens_in_tokenization=self.add_special_tokens_in_tokenization,
             custom_logit_processor=(
                 self.custom_logit_processor[i]
                 if self.custom_logit_processor is not None
@@ -492,6 +498,8 @@ class EmbeddingReqInput:
     log_metrics: bool = True
     # The modalities of the image data [image, multi-images, video]
     modalities: Optional[List[str]] = None
+    # Add special tokens during tokenization
+    add_special_tokens_in_tokenization: bool = True
 
     def contains_mm_input(self) -> bool:
         return has_valid_data(self.image_data) or has_valid_data(self.audio_data)
@@ -556,6 +564,7 @@ class EmbeddingReqInput:
             input_ids=self.input_ids[i] if self.input_ids is not None else None,
             image_data=self.image_data[i] if self.image_data is not None else None,
             sampling_params=self.sampling_params[i],
+            add_special_tokens_in_tokenization=self.add_special_tokens_in_tokenization,
             rid=self.rid[i],
         )
 
